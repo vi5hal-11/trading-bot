@@ -1,4 +1,9 @@
+# Secrets — NEVER commit
 .env
+.env.*
+!.env.example
+
+# Python
 venv/
 __pycache__/
 *.pyc
@@ -9,7 +14,25 @@ __pycache__/
 dist/
 build/
 .mypy_cache/
-logs/*.log
+
+# Logs and runtime artifacts
+logs/
+*.log
+
+# ML model binaries
 ml/models/*.pkl
 ml/models/*.json
 ml/models/*.h5
+ml/models/*.ubj
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker volumes (if accidentally created locally)
+postgres_data/
+grafana_data/

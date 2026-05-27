@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0d0f1a;
+  --foreground: #e2e8f0;
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(99, 102, 241, 0.2);
+  --glass-border-bright: rgba(99, 102, 241, 0.4);
+  --primary: #6366f1;
+  --gain: #06b6d4;
+  --loss: #ef4444;
+  --warn: #f59e0b;
+}
+
+body {
+  background-color: #0d0f1a;
+  color: #e2e8f0;
+  font-family: "GeistMono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer components {
+  .glass-card {
+    @apply rounded-xl border backdrop-blur-[16px];
+    background: var(--glass-bg);
+    border-color: var(--glass-border);
+  }
+
+  .glass-card-bright {
+    @apply rounded-xl border backdrop-blur-[16px];
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--glass-border-bright);
+  }
+
+  .badge-buy {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold;
+    background: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+    border: 1px solid rgba(6, 182, 212, 0.3);
+  }
+
+  .badge-sell {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold;
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .badge-hold {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold;
+    background: rgba(107, 114, 128, 0.15);
+    color: #9ca3af;
+    border: 1px solid rgba(107, 114, 128, 0.3);
+  }
+
+  .text-gain {
+    color: #06b6d4;
+  }
+
+  .text-loss {
+    color: #ef4444;
+  }
+
+  .text-warn {
+    color: #f59e0b;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
