@@ -12,9 +12,12 @@ Commands:
   /stopall     — stop loop + close all positions at market
   /pause       — keep loop running but block new entries
   /resume      — unblock new entries
+  /update      — git pull + docker compose rebuild (VPS only)
   /help        — show this list
 """
 import asyncio
+import os
+import subprocess
 from datetime import datetime, timezone
 
 import httpx
@@ -98,7 +101,8 @@ class TelegramCommandBot:
                 "/stop — stop (hold positions)\n"
                 "/stopall — stop + close all\n"
                 "/pause — no new entries\n"
-                "/resume — allow entries"
+                "/resume — allow entries\n"
+                "/update — pull latest & rebuild"
             )
 
         if cmd == "/status":
@@ -190,5 +194,29 @@ class TelegramCommandBot:
             state.paused = False
             state.log_activity("system", "Bot resumed via Telegram")
             return "▶️ Resumed — new entries are now allowed"
+
+        if cmd == "/update":
+            update_script = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "update.sh",
+            )
+            if not os.path.isfile(update_script):
+                return "⚠️ update.sh not found — are you on the VPS?"
+            try:
+                result = subprocess.run(
+                    ["bash", update_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                lines = (result.stdout + result.stderr).strip().splitlines()
+                tail = "\n".join(lines[-15:])
+                rc = result.returncode
+                status = "✅ Update complete" if rc == 0 else f"❌ Update failed (exit {rc})"
+                return f"{status}\n<pre>{tail}</pre>"
+            except subprocess.TimeoutExpired:
+                return "⏳ Update timed out after 5 min — check the VPS manually"
+            except Exception as e:
+                return f"❌ Update error: {e}"
 
         return f"❓ Unknown command: <code>{cmd}</code>\nSend /help for the list"
