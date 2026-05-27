@@ -1,0 +1,140 @@
+exchange:
+  name: binanceusdm           # Binance USDT-M perpetual futures
+  default_type: future
+
+trading:
+  symbols:
+    - BTC/USDT:USDT
+    - ETH/USDT:USDT
+    - SOL/USDT:USDT
+  timeframe: 15m              # candle timeframe for strategy decisions
+  loop_interval_seconds: 60   # how often the main loop runs
+
+risk:
+  max_loss_pct_per_trade: 0.02      # 2% max loss per trade
+  max_position_pct: 0.10            # max 10% portfolio per position
+  max_open_positions: 5
+  daily_loss_circuit_breaker: 0.05  # halt if daily loss > 5%
+  intraday_loss_circuit_breaker: 0.03
+  kelly_fraction: 0.25              # fractional Kelly (25%)
+  trailing_stop_atr_multiplier: 1.5
+  time_stop_hours: 4                # close if no profit after 4h
+  max_portfolio_drawdown: 0.15      # halt + close all if equity drops 15% from peak
+  max_total_exposure_pct: 0.80      # max 80% of balance deployed across all positions
+  correlation_buckets:
+    btc_group:
+      - BTC/USDT:USDT
+      - ETH/USDT:USDT
+
+take_profit:
+  partial_1_pct: 0.01    # sell 25% at +1%
+  partial_1_size: 0.25
+  partial_2_pct: 0.02    # sell 50% at +2%
+  partial_2_size: 0.50
+
+ensemble:
+  threshold: 0.30         # consensus score needed to act
+  weights:
+    momentum: 0.25
+    mean_reversion: 0.20
+    trend_following: 0.20
+    sentiment: 0.15
+    ml_xgboost: 0.20
+    ifvg: 0.0             # weight zero until backtested
+
+strategies:
+  momentum:
+    rsi_oversold: 35          # relaxed from 30 — fires more frequently
+    rsi_overbought: 65        # relaxed from 70
+  mean_reversion:
+    adx_threshold: 28         # raised from 25 — avoid trading in weak trends
+    bb_buy_pct: 0.10          # widened from 0.05 — cleaner extremes only
+    bb_sell_pct: 0.90         # widened from 0.95
+  trend_following:
+    vol_ratio_threshold: 1.2  # relaxed from 1.5
+
+ml:
+  horizon_candles: 8            # predict 2h ahead (8 × 15m candles)
+  label_threshold_pct: 0.003   # ±0.3% return threshold (was 0.5% — too many HOLDs)
+  confidence_threshold: 0.15   # min confidence above random (1/3) to act
+  model_path: ml/models/xgboost_model.pkl
+  scaler_path: ml/models/xgboost_scaler.pkl
+  feature_names_path: ml/models/feature_names.json
+
+ifvg:
+  enabled: true
+  symbols:
+    - BTC/USDT:USDT
+    - ETH/USDT:USDT
+    - SOL/USDT:USDT
+  entry_timeframe: "15m"
+  bias_timeframe: "4h"
+  filter_timeframe: "1h"
+
+  session:
+    killzones_utc:
+      asia:     { start: "00:00", end: "02:00" }
+      london:   { start: "07:00", end: "09:00" }
+      ny_open:  { start: "13:30", end: "15:30" }
+      ny_close: { start: "18:00", end: "20:00" }
+    news_blackout_minutes: 30
+    shock_candle_atr_multiplier: 3.0
+    shock_blackout_minutes: 15
+
+  bias:
+    swing_lookback: 5
+    midpoint_lookback: 20
+
+  structure:
+    pool_lookback: 20
+    pool_expiry_candles: 40
+    pool_max_per_side: 3
+    pool_min_distance_pct: 0.003
+    bos_lookback: 10
+
+  sweep:
+    min_extension_pct: 0.0005
+    max_body_atr_multiplier: 2.0
+
+  displacement:
+    min_atr_multiplier: 1.5
+    max_candles_after_sweep: 2
+
+  ifvg_zone:
+    min_width_pct: 0.001
+    expiry_candles: 20
+    smt_window_candles: 1
+
+  confluence:
+    min_score: 4
+    strong_sweep_ticks: 5
+    strong_displacement_multiplier: 2.0
+
+  entry:
+    mode_switch_candles: 5
+    total_expiry_candles: 10
+    confirmation_wick_body_ratio: 1.5
+
+  risk:
+    risk_pct: 1.0
+    sl_atr_multiplier: 1.5
+    max_concurrent_trades: 2
+    daily_loss_limit_pct: 3.0
+    tp1_r: 1.0
+    tp2_r: 2.0
+    trail_atr_multiplier: 1.0
+    trail_recalc_candles: 2
+    dol_min_r: 2.0
+
+indicators:
+  rsi_period: 14
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  bb_period: 20
+  bb_std: 2
+  atr_period: 14
+  adx_period: 14
+  sma_fast: 50
+  sma_slow: 200
+  volume_ma_period: 20

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trading Bot Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    .pnl-pos { color: #22c55e; }
+    .pnl-neg { color: #ef4444; }
+    .badge-buy  { background:#16a34a; color:#fff; padding:2px 8px; border-radius:4px; font-size:12px; }
+    .badge-sell { background:#dc2626; color:#fff; padding:2px 8px; border-radius:4px; font-size:12px; }
+    .badge-hold { background:#6b7280; color:#fff; padding:2px 8px; border-radius:4px; font-size:12px; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-mono">
+
+<!-- Header -->
+<div class="bg-gray-900 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+  <h1 class="text-lg font-bold tracking-wide text-white">Trading Bot</h1>
+  <div id="status-bar"
+       hx-get="/api/status"
+       hx-trigger="every 3s"
+       hx-swap="innerHTML">
+    Loading...
+  </div>
+</div>
+
+<script>
+// Render status bar inline after HTMX fetches
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  if (e.detail.target.id === 'status-bar') {
+    try {
+      const d = JSON.parse(e.detail.xhr.responseText);
+      const paused = d.paused ? '<span class="bg-yellow-500 text-black px-2 py-0.5 rounded text-xs ml-2">PAUSED</span>' : '';
+      const cb = d.circuit_breaker_active ? '<span class="bg-red-600 text-white px-2 py-0.5 rounded text-xs ml-2">CB ACTIVE</span>' : '';
+      const up = Math.floor(d.uptime_seconds/3600)+'h '+ Math.floor((d.uptime_seconds%3600)/60)+'m';
+      e.detail.target.innerHTML = `<span class="text-gray-400 text-sm">Loop <b class="text-white">${d.loop_count}</b> | Uptime ${up} | ${d.mode}${paused}${cb}</span>`;
+    } catch {}
+  }
+});
+</script>
+
+<div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- Portfolio Summary Cards -->
+  <div id="summary-cards"
+       hx-get="/api/summary"
+       hx-trigger="every 5s"
+       hx-swap="innerHTML"
+       class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-gray-800 rounded p-4 text-center text-gray-400">Loading...</div>
+  </div>
+
+<script>
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  if (e.detail.target.id === 'summary-cards') {
+    try {
+      const d = JSON.parse(e.detail.xhr.responseText);
+      const pnlClass = d.total_pnl >= 0 ? 'text-green-400' : 'text-red-400';
+      const dayClass = d.daily_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400';
+      const ddClass  = d.drawdown_from_peak > 0.10 ? 'text-red-400' : d.drawdown_from_peak > 0.05 ? 'text-yellow-400' : 'text-gray-300';
+      e.detail.target.innerHTML = `
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Balance</div>
+          <div class="text-xl font-bold">${d.balance?.toFixed(2)} USDT</div>
+        </div>
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Total PnL</div>
+          <div class="text-xl font-bold ${pnlClass}">${d.total_pnl >= 0 ? '+' : ''}${d.total_pnl?.toFixed(2)} USDT</div>
+        </div>
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Daily PnL</div>
+          <div class="text-xl font-bold ${dayClass}">${(d.daily_pnl_pct*100).toFixed(2)}%</div>
+        </div>
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Drawdown</div>
+          <div class="text-xl font-bold ${ddClass}">${(d.drawdown_from_peak*100).toFixed(2)}%</div>
+        </div>
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Win Rate</div>
+          <div class="text-xl font-bold">${(d.win_rate*100).toFixed(1)}%</div>
+        </div>
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Trades</div>
+          <div class="text-xl font-bold">${d.total_trades}</div>
+        </div>
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Open Positions</div>
+          <div class="text-xl font-bold">${d.open_positions}</div>
+        </div>
+        <div class="bg-gray-800 rounded p-4">
+          <div class="text-gray-400 text-xs mb-1">Equity</div>
+          <div class="text-xl font-bold">${d.equity?.toFixed(2)} USDT</div>
+        </div>`;
+    } catch {}
+  }
+});
+</script>
+
+  <!-- Bot Controls -->
+  <div class="flex gap-3 items-center">
+    <button hx-post="/api/bot/pause" hx-swap="none"
+            class="bg-yellow-600 hover:bg-yellow-500 text-white px-4 py-2 rounded text-sm font-bold">
+      Pause Trading
+    </button>
+    <button hx-post="/api/bot/resume" hx-swap="none"
+            class="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-bold">
+      Resume Trading
+    </button>
+    <span class="text-gray-500 text-xs">Pause prevents new positions from opening. Existing positions remain active.</span>
+  </div>
+
+  <!-- Open Positions -->
+  <div class="bg-gray-900 rounded border border-gray-700">
+    <div class="px-4 py-3 border-b border-gray-700 text-sm font-bold text-gray-300">Open Positions</div>
+    <div id="positions-table"
+         hx-get="/api/positions"
+         hx-trigger="every 5s"
+         hx-swap="innerHTML"
+         class="overflow-x-auto">
+      <div class="px-4 py-6 text-gray-500 text-sm text-center">Loading...</div>
+    </div>
+  </div>
+
+<script>
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  if (e.detail.target.id === 'positions-table') {
+    try {
+      const d = JSON.parse(e.detail.xhr.responseText);
+      if (!d.positions || d.positions.length === 0) {
+        e.detail.target.innerHTML = '<div class="px-4 py-6 text-gray-500 text-sm text-center">No open positions</div>';
+        return;
+      }
+      const rows = d.positions.map(p => {
+        const pnlC = p.unrealized_pnl >= 0 ? 'text-green-400' : 'text-red-400';
+        const badge = p.side === 'BUY' ? '<span class="badge-buy">BUY</span>' : '<span class="badge-sell">SELL</span>';
+        return `<tr class="border-t border-gray-800 hover:bg-gray-800">
+          <td class="px-4 py-3 text-sm font-bold">${p.symbol.replace('/USDT:USDT','')}</td>
+          <td class="px-4 py-3">${badge}</td>
+          <td class="px-4 py-3 text-sm">${p.entry_price}</td>
+          <td class="px-4 py-3 text-sm">${p.current_price}</td>
+          <td class="px-4 py-3 text-sm font-bold ${pnlC}">${p.unrealized_pnl >= 0?'+':''}${p.unrealized_pnl} (${(p.unrealized_pnl_pct*100).toFixed(2)}%)</td>
+          <td class="px-4 py-3 text-sm text-gray-400">${p.stop_loss}</td>
+          <td class="px-4 py-3 text-sm text-gray-400">${p.age_minutes}m</td>
+          <td class="px-4 py-3 text-xs text-gray-400">${p.strategy} (${(p.confidence*100).toFixed(0)}%)</td>
+          <td class="px-4 py-3">
+            <button hx-post="/api/trade/close/${encodeURIComponent(p.symbol)}"
+                    hx-swap="none"
+                    onclick="return confirm('Close ${p.symbol}?')"
+                    class="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs">
+              Close
+            </button>
+          </td>
+        </tr>`;
+      }).join('');
+      e.detail.target.innerHTML = `<table class="w-full text-left">
+        <thead><tr class="text-gray-500 text-xs uppercase">
+          <th class="px-4 py-2">Symbol</th><th class="px-4 py-2">Side</th>
+          <th class="px-4 py-2">Entry</th><th class="px-4 py-2">Current</th>
+          <th class="px-4 py-2">Unr. PnL</th><th class="px-4 py-2">Stop</th>
+          <th class="px-4 py-2">Age</th><th class="px-4 py-2">Strategy</th>
+          <th class="px-4 py-2">Action</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+    } catch {}
+  }
+});
+</script>
+
+  <!-- Last Signals -->
+  <div class="bg-gray-900 rounded border border-gray-700">
+    <div class="px-4 py-3 border-b border-gray-700 text-sm font-bold text-gray-300">Last Signals</div>
+    <div id="signals-panel"
+         hx-get="/api/signals"
+         hx-trigger="every 5s"
+         hx-swap="innerHTML"
+         class="px-4 py-3">
+      Loading...
+    </div>
+  </div>
+
+<script>
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  if (e.detail.target.id === 'signals-panel') {
+    try {
+      const d = JSON.parse(e.detail.xhr.responseText);
+      const sigs = d.signals || {};
+      if (Object.keys(sigs).length === 0) {
+        e.detail.target.innerHTML = '<span class="text-gray-500 text-sm">No signals yet</span>';
+        return;
+      }
+      const items = Object.entries(sigs).map(([sym, s]) => {
+        const cls = s.action === 'BUY' ? 'badge-buy' : s.action === 'SELL' ? 'badge-sell' : 'badge-hold';
+        return `<div class="flex items-center gap-3 py-1">
+          <span class="text-sm font-bold w-32">${sym.replace('/USDT:USDT','')}</span>
+          <span class="${cls}">${s.action}</span>
+          <span class="text-gray-400 text-xs">conf ${(s.confidence*100).toFixed(1)}% | consensus ${s.consensus_score?.toFixed(3)}</span>
+          <span class="text-gray-500 text-xs">${s.price?.toFixed(4)}</span>
+        </div>`;
+      }).join('');
+      e.detail.target.innerHTML = `<div class="space-y-1">${items}</div>`;
+    } catch {}
+  }
+});
+</script>
+
+  <!-- Risk Config Editor -->
+  <div class="bg-gray-900 rounded border border-gray-700">
+    <div class="px-4 py-3 border-b border-gray-700 text-sm font-bold text-gray-300">Risk Config</div>
+    <div class="px-4 py-4">
+      <div id="config-form"
+           hx-get="/api/config"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        Loading...
+      </div>
+    </div>
+  </div>
+
+<script>
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  if (e.detail.target.id === 'config-form') {
+    try {
+      const d = JSON.parse(e.detail.xhr.responseText);
+      const r = d.risk || {};
+      const ens = d.ensemble || {};
+      const field = (key, label, val, step) =>
+        `<div class="flex flex-col gap-1">
+          <label class="text-xs text-gray-400">${label}</label>
+          <input type="number" step="${step}" id="cfg-${key}" value="${val}"
+                 class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-36 text-white"/>
+        </div>`;
+      e.detail.target.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          ${field('max_loss_pct_per_trade', 'Max Loss/Trade', r.max_loss_pct_per_trade, '0.001')}
+          ${field('max_open_positions', 'Max Open Pos', r.max_open_positions, '1')}
+          ${field('daily_loss_circuit_breaker', 'Daily CB', r.daily_loss_circuit_breaker, '0.01')}
+          ${field('trailing_stop_atr_multiplier', 'ATR Mult', r.trailing_stop_atr_multiplier, '0.1')}
+          ${field('max_portfolio_drawdown', 'Max Drawdown', r.max_portfolio_drawdown, '0.01')}
+          ${field('max_total_exposure_pct', 'Max Exposure', r.max_total_exposure_pct, '0.05')}
+          ${field('ens_threshold', 'Ensemble Threshold', ens.threshold, '0.01')}
+        </div>
+        <button onclick="saveConfig()" class="bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold">Save Config</button>
+        <span id="cfg-msg" class="text-xs text-gray-400 ml-3"></span>`;
+    } catch {}
+  }
+});
+
+function saveConfig() {
+  const g = id => parseFloat(document.getElementById('cfg-'+id)?.value);
+  const body = {
+    risk: {
+      max_loss_pct_per_trade: g('max_loss_pct_per_trade'),
+      max_open_positions: parseInt(document.getElementById('cfg-max_open_positions')?.value),
+      daily_loss_circuit_breaker: g('daily_loss_circuit_breaker'),
+      trailing_stop_atr_multiplier: g('trailing_stop_atr_multiplier'),
+      max_portfolio_drawdown: g('max_portfolio_drawdown'),
+      max_total_exposure_pct: g('max_total_exposure_pct'),
+    },
+    ensemble: { threshold: g('ens_threshold') }
+  };
+  fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+    .then(r => r.json())
+    .then(d => { document.getElementById('cfg-msg').textContent = 'Saved: ' + (d.updated||[]).join(', '); })
+    .catch(() => { document.getElementById('cfg-msg').textContent = 'Save failed'; });
+}
+</script>
+
+</div><!-- end max-w -->
+</body>
+</html>

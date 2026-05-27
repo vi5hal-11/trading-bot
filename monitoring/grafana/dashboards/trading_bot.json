@@ -1,0 +1,194 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "8.0.0" },
+    { "type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+          "format": "time_series",
+          "rawSql": "SELECT snapped_at AS time, equity AS \"Equity\" FROM portfolio_snapshots WHERE $__timeFilter(snapped_at) ORDER BY snapped_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Equity Curve",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+          "format": "time_series",
+          "rawSql": "SELECT snapped_at AS time, balance AS \"Balance\", equity AS \"Equity\" FROM portfolio_snapshots WHERE $__timeFilter(snapped_at) ORDER BY snapped_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Balance vs Equity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "barRadius": 0.05,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "auto",
+        "tooltip": { "mode": "single" },
+        "xTickLabelRotation": -45
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+          "format": "table",
+          "rawSql": "SELECT symbol, ROUND(SUM(pnl)::numeric, 2) AS \"P&L\" FROM trades WHERE closed_at IS NOT NULL GROUP BY symbol ORDER BY \"P&L\" DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "P&L by Symbol",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 40 },
+              { "color": "green", "value": 55 }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 8 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+          "format": "table",
+          "rawSql": "SELECT ROUND((COUNT(*) FILTER (WHERE pnl > 0) * 100.0 / NULLIF(COUNT(*), 0))::numeric, 1) AS \"Win Rate %\" FROM trades WHERE closed_at IS NOT NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Win Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "pnl" }, "properties": [{ "id": "unit", "value": "currencyUSD" }, { "id": "custom.displayMode", "value": "color-background" }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0 }] } }] },
+          { "matcher": { "id": "byName", "options": "pnl_pct" }, "properties": [{ "id": "unit", "value": "percentunit" }] },
+          { "matcher": { "id": "byName", "options": "entry_price" }, "properties": [{ "id": "unit", "value": "currencyUSD" }] },
+          { "matcher": { "id": "byName", "options": "exit_price" }, "properties": [{ "id": "unit", "value": "currencyUSD" }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "options": {
+        "footer": { "enablePagination": false, "show": false },
+        "showHeader": true,
+        "sortBy": [{ "displayName": "closed_at", "desc": true }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+          "format": "table",
+          "rawSql": "SELECT symbol, side, ROUND(entry_price::numeric, 4) AS entry_price, ROUND(exit_price::numeric, 4) AS exit_price, ROUND(pnl::numeric, 2) AS pnl, ROUND(pnl_pct::numeric, 4) AS pnl_pct, strategy, reason, closed_at FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 25",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Trades",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 1, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "tradingbot-pg" },
+          "format": "time_series",
+          "rawSql": "SELECT created_at AS time, COUNT(*) AS \"Signal Count\" FROM signals WHERE action != 'HOLD' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Signal Activity (BUY/SELL only)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["trading", "crypto"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Trading Bot",
+  "uid": "trading-bot-v1",
+  "version": 1
+}
