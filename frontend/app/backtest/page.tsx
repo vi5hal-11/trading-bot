@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import AppShell from "@/components/layout/AppShell";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 
 interface Metrics {
   total_trades: number;

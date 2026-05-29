@@ -111,7 +111,13 @@ def _build_snapshot(state: BotState) -> dict:
 app = FastAPI(title="Trading Bot", docs_url=None, redoc_url=None)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:80",
+        "http://localhost:3000",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,
