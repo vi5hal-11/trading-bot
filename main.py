@@ -188,17 +188,14 @@ async def main():
     web_app.state.ppo_sizer    = ppo_sizer
 
     # Redis client for IFVG state/blackout/daily-loss tracking
+    # REDIS_URL env var takes priority (set to redis://redis:6379/0 in Docker)
+    import os as _os
     import redis as _redis
-    _redis_cfg = params.get("redis", {})
+    _redis_url = _os.environ.get("REDIS_URL") or settings.redis_url
     try:
-        _redis_client = _redis.Redis(
-            host=_redis_cfg.get("host", "localhost"),
-            port=_redis_cfg.get("port", 6379),
-            db=_redis_cfg.get("db", 0),
-            decode_responses=True,
-        )
+        _redis_client = _redis.Redis.from_url(_redis_url, decode_responses=True)
         _redis_client.ping()
-        logger.info("Redis connected — IFVG state persistence enabled")
+        logger.info(f"Redis connected ({_redis_url}) — IFVG state persistence enabled")
     except Exception as _e:
         logger.warning(f"Redis unavailable — IFVG daily-loss guard disabled: {_e}")
         _redis_client = None

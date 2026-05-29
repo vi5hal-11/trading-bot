@@ -10,6 +10,7 @@ import {
   Lightbulb,
   PieChart,
   Cpu,
+  FlaskConical,
 } from "lucide-react";
 
 const NAV = [
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/trades/explain", label: "Explainer", icon: Lightbulb },
   { href: "/analytics", label: "Analytics", icon: PieChart },
   { href: "/ml", label: "ML & Controls", icon: Cpu },
+  { href: "/backtest", label: "Backtester", icon: FlaskConical },
 ];
 
 export default function Sidebar() {

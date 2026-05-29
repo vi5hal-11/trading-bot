@@ -98,6 +98,25 @@ CREATE TABLE IF NOT EXISTS trade_postmortem (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id              SERIAL PRIMARY KEY,
+    run_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    symbol          VARCHAR(20),          -- NULL = all symbols
+    months          INT,
+    walk_forward    BOOLEAN DEFAULT FALSE,
+    threshold       NUMERIC(4,2),
+    initial_balance NUMERIC(18,2),
+    total_trades    INT,
+    win_rate        NUMERIC(5,4),
+    sharpe          FLOAT,
+    sortino         FLOAT,
+    max_drawdown    NUMERIC(6,4),
+    total_return    NUMERIC(8,4),
+    profit_factor   FLOAT,
+    expectancy      FLOAT,
+    summary_path    TEXT
+);
+
 CREATE INDEX idx_trades_symbol    ON trades(symbol);
 CREATE INDEX idx_trades_opened_at ON trades(opened_at);
 CREATE INDEX idx_signals_created  ON signals(created_at);

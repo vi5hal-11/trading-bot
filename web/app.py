@@ -682,3 +682,142 @@ async def get_ppo(request: Request):
     if ppo is None:
         return {"available": False, "trained": False}
     return ppo.summary()
+
+
+# ── Backtest ──────────────────────────────────────────────────────────────────
+
+# In-memory cache: stores the most recent backtest result per key
+_backtest_cache: dict = {}
+_backtest_running: bool = False
+
+
+@app.post("/api/backtest/run")
+async def backtest_run(request: Request):
+    """
+    Trigger a backtest asynchronously.
+    Body (all optional):
+      { "symbol": "BTC/USDT:USDT", "months": 3, "walk_forward": false, "threshold": 0.10 }
+    Returns immediately with { "status": "started" } — poll /api/backtest/result for output.
+    """
+    global _backtest_running
+    if _backtest_running:
+        return JSONResponse({"status": "already_running"}, status_code=409)
+
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    symbol       = body.get("symbol", None)
+    months       = int(body.get("months", 3))
+    walk_forward = bool(body.get("walk_forward", False))
+    threshold    = float(body.get("threshold", 0.10))
+    balance      = float(body.get("initial_balance", 10_000.0))
+
+    async def _run():
+        global _backtest_running, _backtest_cache
+        _backtest_running = True
+        _backtest_cache["status"] = "running"
+        _backtest_cache["started_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            from backtest.run import run_backtest
+            result = await run_backtest(
+                symbol=symbol,
+                months=months,
+                walk_forward=walk_forward,
+                threshold=threshold,
+                initial_balance=balance,
+            )
+            _backtest_cache["status"] = "complete"
+            _backtest_cache["result"] = result
+            _backtest_cache["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+            # Persist summary to DB if available
+            storage = getattr(request.app.state, "storage", None)
+            if storage:
+                _persist_backtest(result, symbol, months, walk_forward, threshold, balance, storage)
+        except Exception as e:
+            _backtest_cache["status"] = "error"
+            _backtest_cache["error"] = str(e)
+        finally:
+            _backtest_running = False
+
+    asyncio.create_task(_run())
+    return {"status": "started", "params": {"symbol": symbol, "months": months, "walk_forward": walk_forward, "threshold": threshold}}
+
+
+@app.get("/api/backtest/result")
+async def backtest_result():
+    """Return the most recent backtest result (or current status if still running)."""
+    if not _backtest_cache:
+        return {"status": "no_run_yet"}
+    cache = dict(_backtest_cache)
+    # Trim equity curves from response to keep it small
+    if "result" in cache:
+        trimmed = {}
+        for sym, r in cache["result"].get("results", {}).items():
+            trimmed[sym] = {k: v for k, v in r.items() if k not in ("equity", "equity_timestamps", "trades", "all_trades")}
+        cache["result"] = {**cache["result"], "results": trimmed}
+    return cache
+
+
+@app.get("/api/backtest/history")
+async def backtest_history(request: Request):
+    """Return last 20 backtest run summaries from DB."""
+    storage = getattr(request.app.state, "storage", None)
+    if storage is None:
+        return {"runs": []}
+    try:
+        from sqlalchemy import text
+        with storage.Session() as sess:
+            rows = sess.execute(text(
+                "SELECT * FROM backtest_runs ORDER BY run_at DESC LIMIT 20"
+            )).mappings().all()
+        return {"runs": [dict(r) for r in rows]}
+    except Exception as e:
+        return {"runs": [], "error": str(e)}
+
+
+def _persist_backtest(result, symbol, months, walk_forward, threshold, balance, storage):
+    try:
+        from sqlalchemy import text
+        # Aggregate metrics across symbols
+        all_metrics = []
+        for sym, r in result.get("results", {}).items():
+            m = r.get("metrics") or (r.get("windows", [{}])[-1].get("metrics") if r.get("windows") else None)
+            if m:
+                all_metrics.append(m)
+        if not all_metrics:
+            return
+        avg = lambda key: sum(m.get(key, 0) for m in all_metrics) / len(all_metrics)
+        with storage.Session() as sess:
+            sess.execute(text("""
+                INSERT INTO backtest_runs
+                  (symbol, months, walk_forward, threshold, initial_balance,
+                   total_trades, win_rate, sharpe, sortino, max_drawdown,
+                   total_return, profit_factor, expectancy, summary_path)
+                VALUES
+                  (:symbol, :months, :walk_forward, :threshold, :balance,
+                   :total_trades, :win_rate, :sharpe, :sortino, :max_drawdown,
+                   :total_return, :profit_factor, :expectancy, :summary_path)
+            """), {
+                "symbol":       symbol,
+                "months":       months,
+                "walk_forward": walk_forward,
+                "threshold":    threshold,
+                "balance":      balance,
+                "total_trades": int(sum(m.get("total_trades", 0) for m in all_metrics)),
+                "win_rate":     avg("win_rate"),
+                "sharpe":       avg("sharpe"),
+                "sortino":      avg("sortino"),
+                "max_drawdown": avg("max_drawdown"),
+                "total_return": avg("total_return"),
+                "profit_factor": avg("profit_factor"),
+                "expectancy":   avg("expectancy"),
+                "summary_path": result.get("summary_path", ""),
+            })
+            sess.commit()
+    except Exception as e:
+        from loguru import logger
+        logger.debug(f"Backtest DB persist failed: {e}")
