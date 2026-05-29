@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useLive } from "@/lib/live-context";
 import { api } from "@/lib/api";
