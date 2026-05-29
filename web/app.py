@@ -2,6 +2,7 @@
 FastAPI web control panel for the trading bot.
 Runs in the same asyncio event loop as main.py via uvicorn.Server.
 """
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 
