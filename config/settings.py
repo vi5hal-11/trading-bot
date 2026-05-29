@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     promotion_sharpe_delta: float = Field(default=0.10, alias="PROMOTION_SHARPE_DELTA")
     validation_days: int = Field(default=14, alias="VALIDATION_DAYS")
 
-    model_config = {"env_file": ".env", "populate_by_name": True}
+    model_config = {"env_file": ".env", "populate_by_name": True, "extra": "ignore"}
 
 
 def load_trading_params() -> dict:
