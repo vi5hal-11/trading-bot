@@ -188,17 +188,35 @@ async def main():
     web_app.state.ppo_sizer    = ppo_sizer
 
     # Redis client for IFVG state/blackout/daily-loss tracking
-    # REDIS_URL env var takes priority (set to redis://redis:6379/0 in Docker)
+    # REDIS_URL env var takes priority (redis://redis:6379/0 in Docker, localhost locally)
     import os as _os
     import redis as _redis
     _redis_url = _os.environ.get("REDIS_URL") or settings.redis_url
+    _redis_client = None
     try:
-        _redis_client = _redis.Redis.from_url(_redis_url, decode_responses=True)
+        _redis_client = _redis.Redis.from_url(_redis_url, decode_responses=True, socket_connect_timeout=2)
         _redis_client.ping()
         logger.info(f"Redis connected ({_redis_url}) — IFVG state persistence enabled")
     except Exception as _e:
-        logger.warning(f"Redis unavailable — IFVG daily-loss guard disabled: {_e}")
-        _redis_client = None
+        # Try to auto-start a local Redis container (local dev only, not in Docker)
+        if "localhost" in _redis_url or "127.0.0.1" in _redis_url:
+            try:
+                import subprocess as _sp
+                _sp.run(
+                    ["docker", "run", "-d", "--name", "trading-bot-redis-local",
+                     "-p", "6379:6379", "--restart", "unless-stopped", "redis:7-alpine"],
+                    capture_output=True, timeout=15,
+                )
+                import time as _time; _time.sleep(2)
+                _redis_client = _redis.Redis.from_url(_redis_url, decode_responses=True, socket_connect_timeout=2)
+                _redis_client.ping()
+                logger.info("Redis auto-started via Docker — IFVG state persistence enabled")
+            except Exception as _e2:
+                logger.warning(f"Redis unavailable (IFVG daily-loss guard runs in-memory only): {_e2}")
+                _redis_client = None
+        else:
+            logger.warning(f"Redis unavailable — IFVG daily-loss guard disabled: {_e}")
+            _redis_client = None
 
     balance_display = (
         f"{trader.balance:.0f} USDT"

@@ -10,6 +10,7 @@ const STRATEGY_META: { key: string; label: string; desc: string }[] = [
   { key: "trend_following", label: "Trend Following", desc: "EMA crossover + ADX" },
   { key: "ml_xgboost", label: "ML XGBoost", desc: "Trained classifier signals" },
   { key: "sentiment", label: "Sentiment", desc: "Fear/Greed + CryptoPanic" },
+  { key: "ifvg", label: "IFVG", desc: "Smart money liquidity zones" },
 ];
 
 export default function StrategyToggles() {
