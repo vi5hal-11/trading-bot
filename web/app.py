@@ -643,3 +643,42 @@ async def explain_trade(request: Request):
         pass
 
     return {"rule_based": rule_based, "ollama_available": ollama_available}
+
+
+@app.get("/api/postmortem")
+async def get_postmortem(request: Request):
+    """Return post-mortem loss attribution history and summary."""
+    pm = getattr(request.app.state, "post_mortem", None)
+    if pm is None:
+        return {"history": [], "summary": {}}
+    return {"history": pm.history[:50], "summary": pm.summary()}
+
+
+@app.get("/api/bandit")
+async def get_bandit(request: Request):
+    """Return current Thompson Sampling strategy weights and win/loss counts."""
+    bandit = getattr(request.app.state, "bandit", None)
+    state = _get_state(request)
+    ind = next(iter(state.last_indicators.values()), {}) if state.last_indicators else {}
+    adx = float(ind.get("adx") or 0.0)
+    if bandit is None:
+        return {"weights": {}, "regime": "unknown"}
+    return bandit.summary(adx=adx)
+
+
+@app.get("/api/drift")
+async def get_drift(request: Request):
+    """Return ADWIN drift detector status for the XGBoost model."""
+    drift = getattr(request.app.state, "drift_detector", None)
+    if drift is None:
+        return {"status": "unavailable"}
+    return drift.summary()
+
+
+@app.get("/api/ppo")
+async def get_ppo(request: Request):
+    """Return PPO position sizer status."""
+    ppo = getattr(request.app.state, "ppo_sizer", None)
+    if ppo is None:
+        return {"available": False, "trained": False}
+    return ppo.summary()

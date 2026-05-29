@@ -77,8 +77,30 @@ CREATE TABLE IF NOT EXISTS ifvg_signals (
     closed_at       TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS trade_postmortem (
+    id               SERIAL PRIMARY KEY,
+    trade_id         INT REFERENCES trades(id) ON DELETE SET NULL,
+    symbol           VARCHAR(20)  NOT NULL,
+    side             VARCHAR(4)   NOT NULL,
+    pnl              NUMERIC(18,8),
+    pnl_pct          NUMERIC(8,4),
+    loss_reason      VARCHAR(30)  NOT NULL,  -- win | wrong_regime | stop_too_tight | strategy_conflict | low_liquidity | news_shock | time_stop | normal_loss
+    details          TEXT,
+    adx              NUMERIC(6,2),
+    atr              NUMERIC(18,8),
+    vol_ratio        NUMERIC(6,3),
+    strategy         VARCHAR(50),
+    confidence       NUMERIC(5,4),
+    consensus_score  NUMERIC(6,4),
+    component_signals JSONB,
+    entry_hour_utc   SMALLINT,
+    closed_at        TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX idx_trades_symbol    ON trades(symbol);
 CREATE INDEX idx_trades_opened_at ON trades(opened_at);
 CREATE INDEX idx_signals_created  ON signals(created_at);
 CREATE INDEX idx_model_champion   ON model_versions(is_champion, trained_at DESC);
 CREATE INDEX idx_ifvg_symbol      ON ifvg_signals(symbol, created_at DESC);
+CREATE INDEX idx_postmortem_reason ON trade_postmortem(loss_reason, created_at DESC);

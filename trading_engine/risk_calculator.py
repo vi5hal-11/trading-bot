@@ -1,5 +1,9 @@
+from collections import deque
+
 from loguru import logger
 from config.settings import load_trading_params
+
+_VOL_WINDOW = 90   # candles to track for rolling average ATR
 
 
 class RiskCalculator:
@@ -14,8 +18,38 @@ class RiskCalculator:
         self.atr_mult = p["trailing_stop_atr_multiplier"]
         self.max_drawdown = p.get("max_portfolio_drawdown", 0.15)
         self.max_exposure = p.get("max_total_exposure_pct", 0.80)
+        self.vol_scale_min = p.get("vol_scale_min", 0.75)
+        self.vol_scale_max = p.get("vol_scale_max", 2.0)
         buckets = p.get("correlation_buckets", {})
         self._buckets: list[set] = [set(v) for v in buckets.values()]
+        # Per-symbol rolling ATR history for volatility scaling
+        self._atr_history: dict[str, deque] = {}
+
+    # ── Volatility scaling ────────────────────────────────────────────────────
+
+    def update_atr(self, symbol: str, atr: float) -> None:
+        """Call every loop with the latest ATR so the rolling average stays fresh."""
+        if symbol not in self._atr_history:
+            self._atr_history[symbol] = deque(maxlen=_VOL_WINDOW)
+        self._atr_history[symbol].append(atr)
+
+    def vol_scale_factor(self, symbol: str, current_atr: float) -> float:
+        """
+        Returns a multiplier (vol_scale_min … vol_scale_max) that widens stops
+        when volatility is above its rolling average and tightens them when below.
+
+        factor = current_atr / rolling_avg_atr  (clamped to configured bounds)
+        """
+        hist = self._atr_history.get(symbol)
+        if not hist or len(hist) < 5:
+            return 1.0
+        avg_atr = sum(hist) / len(hist)
+        if avg_atr == 0:
+            return 1.0
+        factor = current_atr / avg_atr
+        return max(self.vol_scale_min, min(self.vol_scale_max, factor))
+
+    # ── Position sizing ───────────────────────────────────────────────────────
 
     def position_size(
         self,
@@ -42,11 +76,21 @@ class RiskCalculator:
         raw = min(max_from_loss, kelly_pos, max_from_cap)
         return raw * signal_strength
 
-    def stop_loss_price(self, entry: float, side: str, atr: float) -> float:
-        mult = self.atr_mult
+    def stop_loss_price(self, entry: float, side: str, atr: float, symbol: str = "") -> float:
+        """
+        ATR-based stop scaled by current volatility regime.
+        When vol is 2× normal the stop widens by 2× — prevents stop-hunting
+        during high-volatility sessions.
+        """
+        scale = self.vol_scale_factor(symbol, atr) if symbol else 1.0
+        mult = self.atr_mult * scale
+        if symbol:
+            logger.debug(f"[Risk] {symbol} stop mult={mult:.2f} (base={self.atr_mult} × vol_scale={scale:.2f})")
         if side == "BUY":
             return entry - mult * atr
         return entry + mult * atr
+
+    # ── Circuit breakers ──────────────────────────────────────────────────────
 
     def circuit_breaker(
         self, daily_pnl_pct: float, intraday_pnl_pct: float
@@ -58,13 +102,11 @@ class RiskCalculator:
         return True, "ok"
 
     def drawdown_breaker(self, drawdown_from_peak: float) -> tuple[bool, str]:
-        """Returns (False, reason) when portfolio drawdown exceeds max threshold."""
         if drawdown_from_peak > self.max_drawdown:
             return False, f"Portfolio drawdown {drawdown_from_peak:.2%} exceeds limit {self.max_drawdown:.2%}"
         return True, "ok"
 
     def exposure_check(self, current_exposure: float, balance: float) -> tuple[bool, str]:
-        """Returns (False, reason) if adding a new position would breach total exposure cap."""
         exposure_pct = current_exposure / balance if balance > 0 else 1.0
         if exposure_pct >= self.max_exposure:
             return False, f"Total exposure {exposure_pct:.2%} at cap ({self.max_exposure:.2%})"
@@ -73,7 +115,6 @@ class RiskCalculator:
     def correlation_check(
         self, symbol: str, open_positions: dict
     ) -> tuple[bool, str]:
-        """Returns (False, reason) if adding symbol would double up in a correlated bucket."""
         for bucket in self._buckets:
             if symbol not in bucket:
                 continue

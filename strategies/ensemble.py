@@ -15,6 +15,13 @@ class EnsembleStrategy:
         weight = self._weights.get(strategy.name, 1.0)
         self._strategies[strategy.name] = (strategy, weight)
 
+    def set_weights(self, weights: dict[str, float]) -> None:
+        """Replace per-strategy weights (called each loop by BanditEnsemble)."""
+        for name, w in weights.items():
+            if name in self._strategies:
+                strat, _ = self._strategies[name]
+                self._strategies[name] = (strat, w)
+
     def generate_signal(
         self,
         df: pd.DataFrame,

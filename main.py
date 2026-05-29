@@ -24,6 +24,10 @@ from trading_engine.binance_trader import BinanceTrader
 from ml.scheduler import build_scheduler
 from web.app import app as web_app, ws_manager, _build_snapshot
 from web.state import BotState
+from learning.post_mortem import PostMortem, TradeRecord
+from learning.bandit_ensemble import BanditEnsemble
+from learning.drift_detector import DriftDetector
+from learning.ppo_sizer import PPOSizer
 
 SUMMARY_EVERY_N = 10
 DRAWDOWN_WARN_THRESHOLD = 0.10
@@ -98,6 +102,11 @@ async def main():
     bot_state.symbols = list(symbols)
     web_app.state.bot_state = bot_state
     web_app.state.storage = storage
+    # Learning components exposed to web endpoints (set after creation below)
+    web_app.state.post_mortem = None
+    web_app.state.bandit = None
+    web_app.state.drift_detector = None
+    web_app.state.ppo_sizer = None
 
     # ── Logging ───────────────────────────────────────────────────────────────
     logger.remove()
@@ -154,6 +163,29 @@ async def main():
     ensemble.register(MLXGBoostStrategy())
     ensemble.register(SentimentStrategy(settings))
     ensemble.register(IFVGStrategy())
+
+    # ── Adaptive learning components ──────────────────────────────────────────
+    _strategy_names = ["momentum", "mean_reversion", "trend_following", "ml_xgboost", "sentiment", "ifvg"]
+    post_mortem  = PostMortem()
+    bandit       = BanditEnsemble(_strategy_names)
+    drift_detect = DriftDetector(
+        on_drift=lambda: asyncio.create_task(
+            telegram.send(
+                "⚠️ <b>ML Drift Detected</b> — market regime changed. "
+                "XGBoost model may be stale. Triggering retrain..."
+            )
+        )
+    )
+    ppo_sizer = PPOSizer()
+    logger.info(
+        f"Learning layer ready — "
+        f"PostMortem ✓ | BanditEnsemble ✓ | DriftDetector ✓ | "
+        f"PPOSizer {'✓' if ppo_sizer.is_trained() else '(untrained — using ×1.0)'}"
+    )
+    web_app.state.post_mortem  = post_mortem
+    web_app.state.bandit       = bandit
+    web_app.state.drift_detector = drift_detect
+    web_app.state.ppo_sizer    = ppo_sizer
 
     # Redis client for IFVG state/blackout/daily-loss tracking
     import redis as _redis
@@ -229,6 +261,34 @@ async def main():
                     f"PnL {trade['pnl']:+.2f} ({trade['reason']})",
                     trade["symbol"],
                 )
+                # Post-mortem attribution + bandit update
+                sym_ind = bot_state.last_indicators.get(trade["symbol"], {})
+                sig_cache = bot_state.last_signals.get(trade["symbol"], {})
+                pm_record = TradeRecord(
+                    symbol=trade["symbol"],
+                    side=trade["side"],
+                    entry_price=trade["entry_price"],
+                    exit_price=trade["exit_price"],
+                    pnl=trade["pnl"],
+                    pnl_pct=trade["pnl_pct"],
+                    reason=trade["reason"],
+                    strategy=sig_cache.get("strategy", "ensemble"),
+                    confidence=sig_cache.get("confidence", 0.0),
+                    consensus_score=sig_cache.get("consensus_score", 0.0),
+                    adx=sym_ind.get("adx") or 0.0,
+                    atr=sym_ind.get("atr") or 0.0,
+                    stop_distance=abs(trade["entry_price"] - trade.get("stop_loss", trade["entry_price"])),
+                    vol_ratio=sym_ind.get("vol_ratio") or 1.0,
+                    entry_hour_utc=trade.get("opened_at_hour", 0),
+                    component_signals=sig_cache.get("component_signals", {}),
+                )
+                post_mortem.analyse(pm_record, storage)
+                bandit.update(
+                    component_signals=sig_cache.get("component_signals", {}),
+                    trade_side=trade["side"],
+                    pnl=trade["pnl"],
+                    adx=sym_ind.get("adx") or 0.0,
+                )
 
             if any(t["reason"] == "drawdown_halt" for t in closed):
                 await telegram.send_drawdown_halt(trader.drawdown_from_peak)
@@ -281,14 +341,28 @@ async def main():
                     f"BB%={ind['bb_pct']} | ADX={ind['adx']} | VolRatio={ind['vol_ratio']}"
                 )
 
+                # Update rolling ATR for volatility-scaled stops
+                current_atr = float(df["atr"].iloc[-1])
+                risk.update_atr(sym, current_atr)
+
+                # Apply bandit-sampled weights to ensemble for this symbol
+                adx_val = float(ind.get("adx") or 0.0)
+                bandit_weights = bandit.sample_weights(adx=adx_val)
+                ensemble.set_weights(bandit_weights)
+
                 signal = ensemble.generate_signal(df, sym, enabled_strategies=bot_state.strategy_enabled)
                 signal["symbol"] = sym
                 signal["timeframe"] = timeframe
                 signal["price"] = prices[sym]
                 bot_state.last_signals[sym] = signal
 
+                # Feed ML prediction to drift detector
+                ml_sig = signal.get("component_signals", {}).get("ml_xgboost", "HOLD")
+                if signal["action"] != "HOLD":
+                    drift_detect.add_element(correct=(ml_sig == signal["action"]))
+
                 current_price = prices[sym]
-                atr = df["atr"].iloc[-1]
+                atr = current_atr
                 action = signal["action"]
                 conf = signal["confidence"]
                 consensus = signal["consensus_score"]
@@ -320,11 +394,29 @@ async def main():
                         logger.warning(f"  {short}: {action} skipped — circuit breaker ({cb_reason})")
                         bot_state.log_activity("skip", f"{action} skipped — CB: {cb_reason}", sym)
                     else:
+                        # PPO sizer: compute size multiplier from current market state
+                        ppo_state = {
+                            "confidence":       conf,
+                            "consensus_score":  consensus,
+                            "rsi":              ind.get("rsi") or 50.0,
+                            "adx":              adx_val,
+                            "atr_pct":          atr / current_price if current_price else 0.01,
+                            "vol_ratio":        ind.get("vol_ratio") or 1.0,
+                            "daily_pnl_pct":    trader.daily_pnl_pct,
+                            "drawdown_from_peak": trader.drawdown_from_peak,
+                            "open_pos_ratio":   len(trader.positions) / max(risk.max_open, 1),
+                            "intraday_pnl_pct": trader.intraday_pnl_pct,
+                        }
+                        size_mult = ppo_sizer.get_size_multiplier(ppo_state)
+                        signal["ppo_size_mult"] = size_mult
+                        logger.info(f"  {short}: PPO size multiplier = {size_mult:.2f}×")
+
                         pos = await trader.open_position(sym, signal, current_price, atr, storage=storage)
                         if pos:
                             logger.info(
                                 f"  {short}: position OPENED @ {current_price:.4f} | "
-                                f"qty={pos.quantity:.4f} | stop={pos.stop_loss:.4f}"
+                                f"qty={pos.quantity:.4f} | stop={pos.stop_loss:.4f} | "
+                                f"ppo_mult={size_mult:.2f}×"
                             )
                             await telegram.send_trade_open(pos)
                             bot_state.log_activity(
