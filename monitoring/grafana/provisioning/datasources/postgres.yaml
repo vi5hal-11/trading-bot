@@ -4,7 +4,7 @@ datasources:
     uid: tradingbot-pg
     type: postgres
     url: postgres:5432
-    database: blofin_bot
+    database: trading_bot
     user: bot_user
     secureJsonData:
       password: secure_password
@@ -13,3 +13,4 @@ datasources:
       postgresVersion: 1500
       timescaledb: false
     isDefault: true
+    editable: false
