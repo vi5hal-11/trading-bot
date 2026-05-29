@@ -186,6 +186,9 @@ async def main():
     web_app.state.bandit       = bandit
     web_app.state.drift_detector = drift_detect
     web_app.state.ppo_sizer    = ppo_sizer
+    # Also attach to bot_state so Telegram commands can reach them
+    bot_state._post_mortem = post_mortem
+    bot_state._bandit      = bandit
 
     # Redis client for IFVG state/blackout/daily-loss tracking
     # REDIS_URL env var takes priority (redis://redis:6379/0 in Docker, localhost locally)

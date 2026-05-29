@@ -11,9 +11,11 @@ import {
   PieChart,
   Cpu,
   FlaskConical,
+  Activity,
 } from "lucide-react";
 
 const NAV = [
+  { href: "/tracking", label: "Live Tracking", icon: Activity },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/positions", label: "Positions", icon: TrendingUp },
   { href: "/signals", label: "Signals", icon: Wifi },
